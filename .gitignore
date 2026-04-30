@@ -28,3 +28,4 @@ checkpoints/
 !release/result.zip
 
 .vscode/
+.Plan/
