@@ -19,16 +19,22 @@ release/
 在 CPU 环境运行：
 
 ```bash
-JITTOR_USE_CUDA=0 python gcn.py
+JITTOR_USE_CUDA=0 python gcn.py --config ../configs/default.json --seed 42
 ```
 
 在可用 CUDA / JittorGeometric GPU 算子环境运行：
 
 ```bash
-python gcn.py
+python gcn.py --use-cuda 1
 ```
 
-训练结束后会生成 `result.json`。当前本地复现最佳验证集准确率为 `0.8020`。
+训练结束后会生成 `result.json` 和 `result.zip`。当前本地复现最佳验证集准确率为 `0.8020`。
+
+运行记录会写入 `outputs/latest/`：
+
+- `config.json`
+- `command.txt`
+- `train.log`
 
 ## Result Format
 

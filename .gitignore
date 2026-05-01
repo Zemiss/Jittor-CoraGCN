@@ -17,6 +17,14 @@ env/
 .cache/
 jittor_cache/
 checkpoints/
+outputs/
+release/outputs/
+*.pkl
+*.pt
+*.ckpt
+*.npz
+*.npy
+!release/data/cora.pkl
 
 # Logs and temporary files
 *.log
@@ -28,4 +36,4 @@ checkpoints/
 !release/result.zip
 
 .vscode/
-.Plan/
+Plan/

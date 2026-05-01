@@ -1,24 +1,17 @@
 # Cora GCN with JittorGeometric
 
-使用 Jittor 与 JittorGeometric 在 Cora 引文网络上训练两层 GCN，完成节点分类并生成热身赛提交文件。项目包含完整训练脚本、数据说明、结果校验脚本和可直接提交的 `result.json` / `result.zip`。
+使用 Jittor 与 JittorGeometric 在 Cora 引文网络上训练两层 GCN，完成节点分类并生成热身赛提交文件。当前本地复现的最佳验证集准确率记录为 `0.8020`。
 
-## Highlights
-
-- 两层 GCN：`1433 -> 256 -> 7`
-- 标准 GCN 归一化：自环 + 对称度归一化
-- 仅使用 `train_mask` 训练，使用 `val_mask` 观察模型表现
-- 仅对 `test_mask` 节点导出预测
-- 本地 CPU 环境可运行，GPU / JittorGeometric 环境优先使用官方算子
-- 当前复现验证集最佳准确率：`0.8020`
-
-## Project Layout
+## 项目结构
 
 ```text
 .
 ├── README.md
-├── WORKFLOW.md
-├── demand.md
+├── LICENSE
+├── CONTRIBUTING.md
 ├── requirements.txt
+├── configs/
+│   └── default.json
 ├── scripts/
 │   └── validate_submission.py
 └── release/
@@ -30,88 +23,86 @@
         └── cora.pkl
 ```
 
-## Quick Start
+## 环境安装
 
-推荐在已有 Jittor 环境中运行。当前机器使用的环境示例：
-
-```bash
-conda activate jittor_env
-cd release
-JITTOR_USE_CUDA=0 python gcn.py
-```
-
-如果有可用 CUDA 与完整 JittorGeometric GPU 算子，可直接运行：
+推荐使用 Python 3.8+。Jittor / JittorGeometric 的安装与 CUDA 版本强相关，若已有比赛环境可直接复用。
 
 ```bash
-cd release
-python gcn.py
+pip install -r requirements.txt
 ```
 
-脚本会训练 200 个 epoch，并在结束后生成：
+CPU 环境建议运行时设置：
 
-- `release/result.json`
-- `release/result.zip`
+```bash
+export JITTOR_USE_CUDA=0
+```
 
-## Dependencies
+## 数据准备
 
-核心依赖：
+比赛数据已放在：
 
-- Python
-- NumPy
-- Jittor
-- JittorGeometric
+```text
+release/data/cora.pkl
+```
 
-详见 [requirements.txt](requirements.txt)。Jittor / JittorGeometric 的安装与 CUDA 版本强相关，建议优先参考官方安装说明。
+数据字段包括 `x`、`y`、`edge_index`、`train_mask`、`val_mask`、`test_mask`、`num_classes`、`num_features`。默认配置使用相对路径 `data/cora.pkl`，因此训练命令需要在 `release/` 目录下执行，或用 `--data-path` 指定其他路径。
 
-## Dataset
+## 训练
 
-数据文件位于 `release/data/cora.pkl`，包含：
+使用默认配置训练 200 个 epoch，并生成 `result.json` 与 `result.zip`：
 
-| Field | Shape / Type | Description |
-|---|---|---|
-| `x` | `2708 x 1433` | 节点词袋特征 |
-| `y` | `2708` | 节点标签，测试集标签为 `-1` |
-| `edge_index` | `2 x E` | COO 边列表 |
-| `train_mask` | `2708` | 训练集掩码 |
-| `val_mask` | `2708` | 验证集掩码 |
-| `test_mask` | `2708` | 测试集掩码 |
-| `num_classes` | `int` | 类别数，预期为 7 |
-| `num_features` | `int` | 特征维度，预期为 1433 |
+```bash
+cd release
+JITTOR_USE_CUDA=0 python gcn.py --config ../configs/default.json --seed 42
+```
 
-## Reproduce
+常用参数可通过命令行覆盖配置文件，例如：
 
-1. 进入发布目录：
+```bash
+python gcn.py --config ../configs/default.json --epochs 300 --hidden-dim 256 --dropout 0.8 --lr 0.01
+```
 
-   ```bash
-   cd release
-   ```
+每次运行会在 `release/outputs/latest/` 保存：
 
-2. 训练并生成预测：
+- `config.json`：实际配置
+- `command.txt`：运行命令
+- `train.log`：训练日志
 
-   ```bash
-   JITTOR_USE_CUDA=0 python gcn.py
-   ```
+## 评测 / 推理
 
-3. 校验提交文件：
+训练脚本会在训练结束后自动对 `test_mask` 节点推理并导出：
 
-   ```bash
-   cd ..
-   python scripts/validate_submission.py
-   ```
+```text
+release/result.json
+release/result.zip
+```
 
-4. 检查压缩包结构：
+本地提交格式校验：
 
-   ```bash
-   python -c "import zipfile; print(zipfile.ZipFile('release/result.zip').namelist())"
-   ```
+```bash
+cd ..
+python scripts/validate_submission.py
+```
 
-   期望输出：
+检查压缩包根目录：
 
-   ```text
-   ['gcn.py', 'result.json']
-   ```
+```bash
+python -c "import zipfile; print(zipfile.ZipFile('release/result.zip').namelist())"
+```
 
-## Submission Format
+期望输出：
+
+```text
+['gcn.py', 'result.json']
+```
+
+## 结果说明
+
+指标为节点分类 Accuracy，即预测正确节点数除以评测节点数。训练阶段只使用 `train_mask`，调参观察 `val_mask`，导出的 `result.json` 只包含 `test_mask` 节点。
+
+测试集真实标签在比赛数据中隐藏，本地无法直接计算测试集 Accuracy。项目以验证集最佳准确率、输出格式和提交包结构作为提交前检查依据。线上成绩可能因评测隐藏标签和运行环境存在差异。
+
+## 提交格式
 
 `result.json` 是 `{节点编号: 预测类别}` 字典：
 
@@ -130,10 +121,6 @@ python gcn.py
 - 只包含 `test_mask` 对应节点
 - `result.zip` 根目录只包含 `gcn.py` 和 `result.json`
 
-## Notes
+## 许可证与声明
 
-`release/gcn.py` 会优先使用 JittorGeometric 的 `GCNConv`、`gcn_norm` 与稀疏格式转换。在本机 CPU 环境中，如果已安装的 JittorGeometric 包导入 CUDA-only 算子失败，脚本会自动切换到纯 Jittor fallback，以相同 GCN 公式完成训练和预测。
-
-## License
-
-代码使用 MIT License。数据集与比赛材料请遵循赛题发布方要求。
+代码使用 MIT License。Cora 数据集与比赛材料请遵循赛题发布方要求。
