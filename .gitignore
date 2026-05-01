@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.ruff_cache/
 
 # Virtual environments
 .venv/
@@ -12,6 +14,10 @@ env/
 .vscode/
 .idea/
 .codex
+Plan/
+plan/
+docs/Plan/
+docs/plan/
 
 # Jittor build/cache artifacts
 .cache/
@@ -29,11 +35,9 @@ release/outputs/
 # Logs and temporary files
 *.log
 *.tmp
+.coverage
 .DS_Store
 
 # Generated submission archives
 *.zip
 !release/result.zip
-
-.vscode/
-Plan/

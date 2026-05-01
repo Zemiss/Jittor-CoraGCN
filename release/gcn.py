@@ -18,8 +18,8 @@ def requested_cpu_from_argv():
     """Detect CPU mode before importing JittorGeometric CUDA-related modules."""
     if "--use-cuda" in sys.argv:
         index = sys.argv.index("--use-cuda")
-        if index + 1 < len(sys.argv) and sys.argv[index + 1] == "0":
-            return True
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1] == "0"
 
     if "--config" in sys.argv:
         index = sys.argv.index("--config")
@@ -28,6 +28,26 @@ def requested_cpu_from_argv():
             if config_path.exists():
                 with config_path.open(encoding="utf-8") as f:
                     return json.load(f).get("use_cuda") == 0
+    return False
+
+
+def requested_dense_fallback_from_argv():
+    """Detect whether to skip JittorGeometric before importing it."""
+    if os.environ.get("JITTOR_DENSE_FALLBACK") == "1":
+        return True
+
+    if "--use-jittor-geometric" in sys.argv:
+        index = sys.argv.index("--use-jittor-geometric")
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1] == "0"
+
+    if "--config" in sys.argv:
+        index = sys.argv.index("--config")
+        if index + 1 < len(sys.argv):
+            config_path = Path(sys.argv[index + 1])
+            if config_path.exists():
+                with config_path.open(encoding="utf-8") as f:
+                    return json.load(f).get("use_jittor_geometric") == 0
     return False
 
 
@@ -41,18 +61,17 @@ import numpy as np
 import jittor as jt
 from jittor import nn
 
-USING_JITTOR_GEOMETRIC = True
+USING_JITTOR_GEOMETRIC = not requested_dense_fallback_from_argv()
 
 try:
+    if not USING_JITTOR_GEOMETRIC:
+        raise ImportError("disabled by --use-jittor-geometric 0")
     from jittor_geometric.nn import GCNConv
     from jittor_geometric.ops import cootocsr, cootocsc
     from jittor_geometric.nn.conv.gcn_conv import gcn_norm
 except Exception as exc:
-    if os.environ.get("JITTOR_USE_CUDA") != "0":
-        raise
-
     USING_JITTOR_GEOMETRIC = False
-    print(f"JittorGeometric CPU 导入失败，切换到纯 Jittor fallback: {exc}")
+    print(f"JittorGeometric 导入失败，切换到纯 Jittor fallback: {exc}")
 
     def gcn_norm(edge_index, edge_weight=None, num_nodes=None,
                  improved=False, add_self_loops=True):
@@ -103,6 +122,7 @@ DEFAULT_CONFIG = {
     "zip_path": "result.zip",
     "output_dir": "outputs/latest",
     "seed": 42,
+    "seeds": None,
     "epochs": 200,
     "hidden_dim": 256,
     "dropout": 0.8,
@@ -110,6 +130,8 @@ DEFAULT_CONFIG = {
     "weight_decay": 5e-4,
     "log_interval": 20,
     "use_cuda": int(os.environ.get("JITTOR_USE_CUDA", "1")),
+    "use_jittor_geometric": 1,
+    "export_strategy": "auto",
 }
 
 
@@ -122,6 +144,11 @@ def parse_args():
     parser.add_argument("--zip-path", default=None, help="Output result.zip path.")
     parser.add_argument("--output-dir", default=None, help="Directory for logs/metadata.")
     parser.add_argument("--seed", type=int, default=None, help="Random seed.")
+    parser.add_argument(
+        "--seeds",
+        default=None,
+        help="Comma-separated seeds for validation-selected ensemble, e.g. 42,7,13.",
+    )
     parser.add_argument("--epochs", type=int, default=None, help="Training epochs.")
     parser.add_argument("--hidden-dim", type=int, default=None, help="GCN hidden size.")
     parser.add_argument("--dropout", type=float, default=None, help="Dropout ratio.")
@@ -129,6 +156,13 @@ def parse_args():
     parser.add_argument("--weight-decay", type=float, default=None, help="Adam weight decay.")
     parser.add_argument("--log-interval", type=int, default=None, help="Log interval.")
     parser.add_argument("--use-cuda", type=int, choices=[0, 1], default=None)
+    parser.add_argument("--use-jittor-geometric", type=int, choices=[0, 1], default=None)
+    parser.add_argument(
+        "--export-strategy",
+        choices=["auto", "best", "ensemble"],
+        default=None,
+        help="Export best validation seed, probability ensemble, or choose automatically.",
+    )
     return parser.parse_args()
 
 
@@ -158,6 +192,18 @@ def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     jt.misc.set_global_seed(seed)
+
+
+def parse_seeds(config):
+    """Return the run seeds used for model selection and ensembling."""
+    seeds = config.get("seeds")
+    if seeds is None:
+        return [int(config["seed"])]
+    if isinstance(seeds, int):
+        return [seeds]
+    if isinstance(seeds, str):
+        return [int(seed.strip()) for seed in seeds.split(",") if seed.strip()]
+    return [int(seed) for seed in seeds]
 
 
 def require_file(path, hint):
@@ -298,13 +344,9 @@ def evaluate(model, graph):
     return accs
 
 
-def export_result(model, raw, result_path):
-    """Predict all nodes and save predictions for test_mask nodes only."""
-    model.eval()
-    logits = model()
-    pred, _ = jt.argmax(logits, dim=1)
-    pred = pred.numpy()
-
+def export_result_from_probs(probs, raw, result_path):
+    """Save predictions for test_mask nodes from class probabilities."""
+    pred = np.argmax(probs, axis=1)
     test_indices = np.nonzero(raw["test_mask"])[0]
     result = {str(int(idx)): int(pred[int(idx)]) for idx in test_indices}
 
@@ -312,6 +354,13 @@ def export_result(model, raw, result_path):
     with result_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
     return result
+
+
+def accuracy_from_probs(probs, raw, mask_name):
+    mask = raw[mask_name]
+    pred = np.argmax(probs[mask], axis=1)
+    label = raw["y"][mask]
+    return float((pred == label).sum() / mask.sum())
 
 
 def package_submission(result_path, zip_path):
@@ -323,18 +372,9 @@ def package_submission(result_path, zip_path):
         zf.write(result_path, arcname="result.json")
 
 
-def main():
-    args = parse_args()
-    config = load_config(args)
-    output_dir = Path(config["output_dir"])
-    log_file = output_dir / "train.log"
-    write_run_metadata(config, output_dir)
-    log_file.write_text("", encoding="utf-8")
-
-    jt.flags.use_cuda = int(config["use_cuda"])
-    set_seed(int(config["seed"]))
-
-    raw, graph = load_graph(Path(config["data_path"]))
+def train_one_run(raw, graph, config, seed, log_file):
+    """Train one seed and keep the probabilities from the best validation epoch."""
+    set_seed(seed)
     model = GCNNet(
         num_features=int(raw["num_features"]),
         num_classes=int(raw["num_classes"]),
@@ -348,23 +388,88 @@ def main():
         weight_decay=float(config["weight_decay"]),
     )
 
-    best_val_acc = 0.0
+    best = {
+        "seed": seed,
+        "epoch": 0,
+        "train_acc": 0.0,
+        "val_acc": 0.0,
+        "probs": None,
+    }
     for epoch in range(1, int(config["epochs"]) + 1):
         loss = train(model, optimizer, graph)
         train_acc, val_acc = evaluate(model, graph)
-        best_val_acc = max(best_val_acc, val_acc)
+
+        if val_acc >= best["val_acc"]:
+            model.eval()
+            best["epoch"] = epoch
+            best["train_acc"] = train_acc
+            best["val_acc"] = val_acc
+            best["probs"] = np.exp(model().numpy())
 
         if epoch % int(config["log_interval"]) == 0 or epoch == 1:
             message = (
-                f"Epoch: {epoch:03d}, Loss: {loss:.4f}, "
-                f"Train Acc: {train_acc:.4f}, Best Val Acc: {best_val_acc:.4f}"
+                f"Seed: {seed}, Epoch: {epoch:03d}, Loss: {loss:.4f}, "
+                f"Train Acc: {train_acc:.4f}, Best Val Acc: {best['val_acc']:.4f}"
             )
             log_message(message, log_file)
 
-    log_message(f"最终结果: Best Val Acc: {best_val_acc:.4f}", log_file)
+    log_message(
+        f"Seed {seed} 最佳结果: Epoch {best['epoch']}, "
+        f"Train Acc: {best['train_acc']:.4f}, Val Acc: {best['val_acc']:.4f}",
+        log_file,
+    )
+    return best
+
+
+def main():
+    args = parse_args()
+    config = load_config(args)
+    output_dir = Path(config["output_dir"])
+    log_file = output_dir / "train.log"
+    write_run_metadata(config, output_dir)
+    log_file.write_text("", encoding="utf-8")
+
+    jt.flags.use_cuda = int(config["use_cuda"])
+    raw, graph = load_graph(Path(config["data_path"]))
+    seeds = parse_seeds(config)
+    log_message(f"训练 seeds: {seeds}", log_file)
+
+    runs = [train_one_run(raw, graph, config, seed, log_file) for seed in seeds]
+    ensemble_probs = np.mean([run["probs"] for run in runs], axis=0)
+    ensemble_train_acc = accuracy_from_probs(ensemble_probs, raw, "train_mask")
+    ensemble_val_acc = accuracy_from_probs(ensemble_probs, raw, "val_mask")
+    best_single = max(runs, key=lambda run: run["val_acc"])
+
+    log_message(
+        f"最佳单模型: Seed {best_single['seed']}, Epoch {best_single['epoch']}, "
+        f"Val Acc: {best_single['val_acc']:.4f}",
+        log_file,
+    )
+    log_message(
+        f"Ensemble 结果: Train Acc: {ensemble_train_acc:.4f}, "
+        f"Val Acc: {ensemble_val_acc:.4f}",
+        log_file,
+    )
+
+    strategy = config.get("export_strategy", "auto")
+    if strategy == "best" or (
+        strategy == "auto" and best_single["val_acc"] >= ensemble_val_acc
+    ):
+        export_probs = best_single["probs"]
+        log_message(
+            f"导出策略: best single seed {best_single['seed']} "
+            f"(Val Acc: {best_single['val_acc']:.4f})",
+            log_file,
+        )
+    else:
+        export_probs = ensemble_probs
+        log_message(
+            f"导出策略: ensemble (Val Acc: {ensemble_val_acc:.4f})",
+            log_file,
+        )
 
     result_path = Path(config["result_path"])
-    result = export_result(model, raw, result_path)
+    result = export_result_from_probs(export_probs, raw, result_path)
     package_submission(result_path, Path(config["zip_path"]))
 
     log_message(f"预测结果已保存到 {result_path}", log_file)

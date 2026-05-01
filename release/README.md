@@ -19,16 +19,24 @@ release/
 在 CPU 环境运行：
 
 ```bash
-JITTOR_USE_CUDA=0 python gcn.py --config ../configs/default.json --seed 42
+JITTOR_USE_CUDA=0 python3 gcn.py --config ../configs/default.json
 ```
 
 在可用 CUDA / JittorGeometric GPU 算子环境运行：
 
 ```bash
-python gcn.py --use-cuda 1
+python3 gcn.py --use-cuda 1
 ```
 
-训练结束后会生成 `result.json` 和 `result.zip`。当前本地复现最佳验证集准确率为 `0.8020`。
+训练结束后会生成 `result.json` 和 `result.zip`。当前正式结果的最佳验证集准确率为 `0.8160`。
+默认配置会保留验证集最优 epoch 的预测结果；多 seed 运行时可按验证集在最佳单模型和 ensemble 间自动选择。
+
+也可以在仓库根目录运行：
+
+```bash
+make train
+make validate
+```
 
 运行记录会写入 `outputs/latest/`：
 
@@ -66,5 +74,5 @@ result.json
 可以用下面命令检查：
 
 ```bash
-python -c "import zipfile; print(zipfile.ZipFile('result.zip').namelist())"
+python3 -c "import zipfile; print(zipfile.ZipFile('result.zip').namelist())"
 ```

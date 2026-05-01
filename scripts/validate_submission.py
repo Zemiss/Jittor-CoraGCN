@@ -1,5 +1,6 @@
 """Validate Cora GCN warm-up submission files."""
 
+import argparse
 import json
 import pickle
 import zipfile
@@ -13,9 +14,23 @@ RESULT_PATH = RELEASE / "result.json"
 ZIP_PATH = RELEASE / "result.zip"
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data", type=Path, default=DATA_PATH, help="Path to cora.pkl.")
+    parser.add_argument(
+        "--result",
+        type=Path,
+        default=RESULT_PATH,
+        help="Path to result.json.",
+    )
+    parser.add_argument("--zip", type=Path, default=ZIP_PATH, help="Path to result.zip.")
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     try:
-        with DATA_PATH.open("rb") as f:
+        with args.data.open("rb") as f:
             raw = pickle.load(f)
     except ModuleNotFoundError as exc:
         if exc.name == "numpy":
@@ -25,7 +40,7 @@ def main():
             ) from exc
         raise
 
-    with RESULT_PATH.open() as f:
+    with args.result.open(encoding="utf-8") as f:
         result = json.load(f)
 
     test_keys = {str(i) for i, value in enumerate(raw["test_mask"]) if value}
@@ -39,8 +54,8 @@ def main():
         "values_are_in_0_6": all(0 <= value <= 6 for value in values),
     }
 
-    if ZIP_PATH.exists():
-        with zipfile.ZipFile(ZIP_PATH) as zf:
+    if args.zip.exists():
+        with zipfile.ZipFile(args.zip) as zf:
             checks["zip_root_files"] = sorted(zf.namelist()) == [
                 "gcn.py",
                 "result.json",

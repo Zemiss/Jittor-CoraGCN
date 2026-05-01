@@ -4,20 +4,26 @@
 
 ## Development Flow
 
-1. 修改 `release/gcn.py` 或文档。
-2. 在 `release/` 目录运行训练：
+1. 修改 `release/gcn.py`、`configs/`、`scripts/` 或文档。
+2. 在仓库根目录运行训练：
 
    ```bash
-   JITTOR_USE_CUDA=0 python gcn.py
+   make train
    ```
 
-3. 回到仓库根目录运行提交校验：
+3. 运行提交校验：
 
    ```bash
-   python scripts/validate_submission.py
+   make validate
    ```
 
-4. 确认 `release/result.zip` 仅包含：
+4. 如只修改了 `result.json` 或打包脚本，重新生成压缩包：
+
+   ```bash
+   make package
+   ```
+
+5. 确认 `release/result.zip` 仅包含：
 
    ```text
    gcn.py
