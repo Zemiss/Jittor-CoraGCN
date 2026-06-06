@@ -1,0 +1,17 @@
+data_path: data/cora.pkl
+result_path: outputs/results/result.json
+zip_path: outputs/results/result.zip
+output_dir: outputs/latest
+model_dir: models
+save_checkpoints: 1
+seed: 42
+seeds: [13]
+epochs: 260
+hidden_dim: 256
+dropout: 0.85
+lr: 0.01
+weight_decay: 0.0005
+log_interval: 20
+use_cuda: 0
+use_jittor_geometric: 0
+export_strategy: auto

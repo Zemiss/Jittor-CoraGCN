@@ -5,6 +5,7 @@ exports predictions for test_mask nodes, and writes reproducibility metadata.
 """
 
 import argparse
+import ast
 import json
 import os
 import pickle
@@ -14,6 +15,66 @@ import zipfile
 from pathlib import Path
 
 
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CONFIG_PATH = ROOT / "configs" / "default.yaml"
+
+
+def parse_scalar(value):
+    """Parse a small YAML scalar without requiring PyYAML."""
+    value = value.strip()
+    lowered = value.lower()
+    if lowered in {"null", "none", "~"}:
+        return None
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    try:
+        return ast.literal_eval(value)
+    except (ValueError, SyntaxError):
+        return value.strip("'\"")
+
+
+def load_yaml_config(config_path):
+    """Load a YAML config, using PyYAML when available and a tiny fallback otherwise."""
+    try:
+        import yaml
+    except ImportError:
+        config = {}
+        with config_path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                key, value = line.split(":", 1)
+                config[key.strip()] = parse_scalar(value)
+        return config
+
+    with config_path.open(encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def load_config_file(config_path):
+    suffix = config_path.suffix.lower()
+    if suffix in {".yaml", ".yml"}:
+        return load_yaml_config(config_path)
+    if suffix == ".json":
+        with config_path.open(encoding="utf-8") as f:
+            return json.load(f)
+    raise ValueError(f"Unsupported config file type: {config_path}")
+
+
+def path_from_root(path):
+    path = Path(path)
+    return path if path.is_absolute() else ROOT / path
+
+
+def config_path_from_argv():
+    if "--config" in sys.argv:
+        index = sys.argv.index("--config")
+        if index + 1 < len(sys.argv):
+            return Path(sys.argv[index + 1])
+    return DEFAULT_CONFIG_PATH
+
+
 def requested_cpu_from_argv():
     """Detect CPU mode before importing JittorGeometric CUDA-related modules."""
     if "--use-cuda" in sys.argv:
@@ -21,13 +82,9 @@ def requested_cpu_from_argv():
         if index + 1 < len(sys.argv):
             return sys.argv[index + 1] == "0"
 
-    if "--config" in sys.argv:
-        index = sys.argv.index("--config")
-        if index + 1 < len(sys.argv):
-            config_path = Path(sys.argv[index + 1])
-            if config_path.exists():
-                with config_path.open(encoding="utf-8") as f:
-                    return json.load(f).get("use_cuda") == 0
+    config_path = config_path_from_argv()
+    if config_path.exists():
+        return load_config_file(config_path).get("use_cuda") == 0
     return False
 
 
@@ -41,13 +98,9 @@ def requested_dense_fallback_from_argv():
         if index + 1 < len(sys.argv):
             return sys.argv[index + 1] == "0"
 
-    if "--config" in sys.argv:
-        index = sys.argv.index("--config")
-        if index + 1 < len(sys.argv):
-            config_path = Path(sys.argv[index + 1])
-            if config_path.exists():
-                with config_path.open(encoding="utf-8") as f:
-                    return json.load(f).get("use_jittor_geometric") == 0
+    config_path = config_path_from_argv()
+    if config_path.exists():
+        return load_config_file(config_path).get("use_jittor_geometric") == 0
     return False
 
 
@@ -118,9 +171,11 @@ except Exception as exc:
 
 DEFAULT_CONFIG = {
     "data_path": "data/cora.pkl",
-    "result_path": "result.json",
-    "zip_path": "result.zip",
+    "result_path": "outputs/results/result.json",
+    "zip_path": "outputs/results/result.zip",
     "output_dir": "outputs/latest",
+    "model_dir": "models",
+    "save_checkpoints": 1,
     "seed": 42,
     "seeds": None,
     "epochs": 200,
@@ -138,11 +193,18 @@ DEFAULT_CONFIG = {
 def parse_args():
     """Parse command line arguments; CLI values override config values."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default=None, help="Path to a JSON config file.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to a YAML config file.",
+    )
     parser.add_argument("--data-path", default=None, help="Path to cora.pkl.")
     parser.add_argument("--result-path", default=None, help="Output result.json path.")
     parser.add_argument("--zip-path", default=None, help="Output result.zip path.")
     parser.add_argument("--output-dir", default=None, help="Directory for logs/metadata.")
+    parser.add_argument("--model-dir", default=None, help="Directory for model checkpoints.")
+    parser.add_argument("--save-checkpoints", type=int, choices=[0, 1], default=None)
     parser.add_argument("--seed", type=int, default=None, help="Random seed.")
     parser.add_argument(
         "--seeds",
@@ -169,14 +231,13 @@ def parse_args():
 def load_config(args):
     config = dict(DEFAULT_CONFIG)
     if args.config:
-        config_path = Path(args.config)
+        config_path = path_from_root(args.config)
         if not config_path.exists():
             raise FileNotFoundError(
                 f"Config file not found: {config_path}. "
                 "Pass a valid --config path or omit --config."
             )
-        with config_path.open(encoding="utf-8") as f:
-            config.update(json.load(f))
+        config.update(load_config_file(config_path))
 
     for key in config:
         arg_name = key.replace("_", "-")
@@ -233,7 +294,7 @@ def load_graph(data_path):
     """Load Cora pickle and return raw dict plus Jittor graph tensors."""
     require_file(
         data_path,
-        "Put cora.pkl under release/data/ or pass --data-path /path/to/cora.pkl.",
+        "Put cora.pkl under data/ or pass --data-path /path/to/cora.pkl.",
     )
     with data_path.open("rb") as f:
         raw = pickle.load(f)
@@ -372,6 +433,14 @@ def package_submission(result_path, zip_path):
         zf.write(result_path, arcname="result.json")
 
 
+def save_checkpoint(model, checkpoint_path):
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    if hasattr(model, "save"):
+        model.save(str(checkpoint_path))
+    else:
+        jt.save(model.state_dict(), str(checkpoint_path))
+
+
 def train_one_run(raw, graph, config, seed, log_file):
     """Train one seed and keep the probabilities from the best validation epoch."""
     set_seed(seed)
@@ -394,7 +463,9 @@ def train_one_run(raw, graph, config, seed, log_file):
         "train_acc": 0.0,
         "val_acc": 0.0,
         "probs": None,
+        "checkpoint_path": None,
     }
+    checkpoint_path = path_from_root(config["model_dir"]) / f"gcn_seed_{seed}.pkl"
     for epoch in range(1, int(config["epochs"]) + 1):
         loss = train(model, optimizer, graph)
         train_acc, val_acc = evaluate(model, graph)
@@ -405,6 +476,9 @@ def train_one_run(raw, graph, config, seed, log_file):
             best["train_acc"] = train_acc
             best["val_acc"] = val_acc
             best["probs"] = np.exp(model().numpy())
+            if int(config.get("save_checkpoints", 1)):
+                save_checkpoint(model, checkpoint_path)
+                best["checkpoint_path"] = str(checkpoint_path)
 
         if epoch % int(config["log_interval"]) == 0 or epoch == 1:
             message = (
@@ -418,19 +492,21 @@ def train_one_run(raw, graph, config, seed, log_file):
         f"Train Acc: {best['train_acc']:.4f}, Val Acc: {best['val_acc']:.4f}",
         log_file,
     )
+    if best["checkpoint_path"]:
+        log_message(f"Seed {seed} 最佳模型已保存到 {best['checkpoint_path']}", log_file)
     return best
 
 
 def main():
     args = parse_args()
     config = load_config(args)
-    output_dir = Path(config["output_dir"])
+    output_dir = path_from_root(config["output_dir"])
     log_file = output_dir / "train.log"
     write_run_metadata(config, output_dir)
     log_file.write_text("", encoding="utf-8")
 
     jt.flags.use_cuda = int(config["use_cuda"])
-    raw, graph = load_graph(Path(config["data_path"]))
+    raw, graph = load_graph(path_from_root(config["data_path"]))
     seeds = parse_seeds(config)
     log_message(f"训练 seeds: {seeds}", log_file)
 
@@ -468,13 +544,14 @@ def main():
             log_file,
         )
 
-    result_path = Path(config["result_path"])
+    result_path = path_from_root(config["result_path"])
     result = export_result_from_probs(export_probs, raw, result_path)
-    package_submission(result_path, Path(config["zip_path"]))
+    zip_path = path_from_root(config["zip_path"])
+    package_submission(result_path, zip_path)
 
     log_message(f"预测结果已保存到 {result_path}", log_file)
     log_message(f"共预测 {len(result)} 个测试节点", log_file)
-    log_message(f"提交压缩包已保存到 {config['zip_path']}", log_file)
+    log_message(f"提交压缩包已保存到 {zip_path}", log_file)
 
 
 if __name__ == "__main__":

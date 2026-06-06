@@ -6,7 +6,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_RELEASE = ROOT / "release"
+DEFAULT_SOURCE = ROOT / "src" / "gcn.py"
+DEFAULT_RESULT = ROOT / "outputs" / "results" / "result.json"
+DEFAULT_OUTPUT = ROOT / "outputs" / "results" / "result.zip"
 
 
 def parse_args():
@@ -14,19 +16,19 @@ def parse_args():
     parser.add_argument(
         "--source",
         type=Path,
-        default=DEFAULT_RELEASE / "gcn.py",
+        default=DEFAULT_SOURCE,
         help="Path to gcn.py.",
     )
     parser.add_argument(
         "--result",
         type=Path,
-        default=DEFAULT_RELEASE / "result.json",
+        default=DEFAULT_RESULT,
         help="Path to result.json.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=DEFAULT_RELEASE / "result.zip",
+        default=DEFAULT_OUTPUT,
         help="Output zip path.",
     )
     return parser.parse_args()

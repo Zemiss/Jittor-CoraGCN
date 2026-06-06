@@ -8,10 +8,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE = ROOT / "release"
-DATA_PATH = RELEASE / "data" / "cora.pkl"
-RESULT_PATH = RELEASE / "result.json"
-ZIP_PATH = RELEASE / "result.zip"
+DATA_PATH = ROOT / "data" / "cora.pkl"
+RESULT_PATH = ROOT / "outputs" / "results" / "result.json"
+ZIP_PATH = ROOT / "outputs" / "results" / "result.zip"
 
 
 def parse_args():
@@ -35,7 +34,7 @@ def main():
     except ModuleNotFoundError as exc:
         if exc.name == "numpy":
             raise SystemExit(
-                "NumPy is required to load release/data/cora.pkl. "
+                "NumPy is required to load data/cora.pkl. "
                 "Run this script inside the project environment."
             ) from exc
         raise
