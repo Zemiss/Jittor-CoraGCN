@@ -23,20 +23,13 @@ docs/plan/
 .cache/
 jittor_cache/
 checkpoints/
+data/
 outputs/
 *.pkl
 *.pt
 *.ckpt
 *.npz
 *.npy
-!data/
-!data/cora.pkl
-!outputs/
-!outputs/images/
-!outputs/images/.gitkeep
-!outputs/results/
-!outputs/results/result.json
-!outputs/results/result.zip
 
 # Logs and temporary files
 *.log
@@ -46,5 +39,4 @@ outputs/
 
 # Generated submission archives
 *.zip
-!outputs/results/result.zip
 docs/

@@ -9,15 +9,16 @@
 ## 目录
 
 - [第六届计图人工智能热身赛：CoraGCN](#第六届计图人工智能热身赛coragcn)
-- [项目结构](#项目结构)
-- [环境配置](#环境配置)
-- [系统配置](#系统配置)
-- [模型结构](#模型结构)
-- [训练配置](#训练配置)
-- [输出文件](#输出文件)
-- [训练](#训练)
-- [测试](#测试)
-- [实验结果](#实验结果)
+  - [目录](#目录)
+  - [项目结构](#项目结构)
+  - [环境配置](#环境配置)
+  - [系统配置](#系统配置)
+  - [模型结构](#模型结构)
+  - [训练配置](#训练配置)
+  - [输出文件](#输出文件)
+  - [训练](#训练)
+  - [测试](#测试)
+  - [实验结果](#实验结果)
 
 ## 项目结构
 
@@ -46,25 +47,16 @@
 
 ## 环境配置
 
-建议使用独立 Python 环境：
+本项目使用 Python 3.7，主要依赖包括 numpy、jittor、jittor-geometric 和 PyYAML。
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+conda create -n CoraGCN python=3.7 -y
 pip install -r requirements.txt
 ```
 
-依赖包括：
-
-- `numpy`
-- `jittor`
-- `jittor-geometric`
-
-如果当前机器没有可用 CUDA，默认配置已经设置为 CPU fallback，可以直接运行。
-
 ## 系统配置
 
-默认配置文件是 `configs/default.yaml`。训练脚本默认读取它，因此修改默认参数只需要改这个文件，不需要再维护 `default.json`。
+默认配置文件是 `configs/default.yaml`。
 
 关键路径：
 
