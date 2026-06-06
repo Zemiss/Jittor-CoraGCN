@@ -4,7 +4,7 @@
 ![Jittor](https://img.shields.io/badge/Jittor-GCN-orange)
 ![Task](https://img.shields.io/badge/Task-Node%20Classification-green)
 
-> 使用 Jittor 与 JittorGeometric 在 Cora 引文网络上训练两层 GCN，完成节点分类并生成热身赛提交文件。当前本地复现的最佳验证集准确率记录为 `0.8160`。
+> 基于 JittorGeometric 库，使用 GCN 模型完成基于 Cora 的引文网络数据集节点分类任务，对测试集中的节点预测其所属类别。
 
 ## 目录
 
